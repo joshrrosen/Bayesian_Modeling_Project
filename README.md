@@ -1,4 +1,4 @@
-# Bayesian_Modeling_Project
+# Bayesian Modeling Project
 
 ## Biostats 730: Applied Bayesian Statistical Modeling, Fall 2022
 
