@@ -32,7 +32,7 @@ model {
   mu ~ normal(0, 10); // priors
   phi ~ normal(0, 100);
   theta ~ normal(0, 100);
-  sigma ~ normal(0, 100);
+  sigma ~ student_t(3, 0, 29.7);
   err ~ normal(0, sigma); // likelihood
 }
 
