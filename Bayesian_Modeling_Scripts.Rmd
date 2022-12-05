@@ -1,0 +1,689 @@
+---
+title: "Bayesian_Modeling_Project_Code"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Read in packages
+```{r setup, include=FALSE}
+library(brms)
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+library(dplyr)
+library(fpp2)
+#library(bayesforecast)
+library(ggthemes)
+library(bayesplot)
+library(here)
+
+
+options(max.print = 100000)
+```
+
+# clear environment
+```{r}
+rm(list = ls(all.names = TRUE))
+```
+
+
+# Read in data
+```{r}
+
+# read in from github
+url <- "https://raw.githubusercontent.com/joshrrosen/Bayesian_Modeling_Project/main/Bikeshare_data.csv"
+bikeshare_data <- read.csv(url)
+
+
+```
+
+
+# Create individual dataframes
+```{r}
+
+# boston
+df_boston <- bikeshare_data %>%
+  filter(CITY == "BOSTON")
+
+
+## --------------------------------------------------
+
+# cambridge
+df_cambridge <- bikeshare_data %>%
+  filter(CITY == "CAMBRIDGE") 
+
+
+## --------------------------------------------------
+
+# Brookline 
+df_brookline <- bikeshare_data %>%
+  filter(CITY == "BROOKLINE") 
+
+
+## --------------------------------------------------
+
+# somerville 
+df_somerville <- bikeshare_data %>%
+  filter(CITY == "SOMERVILLE") 
+
+```
+
+
+
+# updated dataframe
+```{r}
+
+#detach("package:bayesforecast", unload = TRUE)
+
+# create a dataframe 
+merged_df <- rbind(df_boston, df_cambridge, df_brookline, df_somerville)
+
+merged_df <- merged_df %>%
+  mutate(city_id = as.numeric(as.factor(CITY))) %>%
+  filter(After == 0) # only pre-bike share period
+
+
+```
+
+
+
+# predict cambridge 
+```{r}
+
+# isolate cambridge data
+df_cambridge1 <- merged_df %>%
+  filter(CITY == "CAMBRIDGE")
+
+# get priors
+brms::get_prior(Total_Injuries ~ 0 + arma(p = 1, q = 1), data = df_cambridge1)
+
+
+stan_dat2 <- list(y = df_cambridge1$Total_Injuries, 
+                 T = length(df_cambridge1$Total_Injuries),
+                 n_new = 10) # everything over 30 is a prediction
+
+fit3 <- stan(file = "C:\\Users\\User\\Desktop\\Bayesian Stats\\Bayesian_Modeling_Project\\Bayesian_Modeling_Project\\single_city_prediction_cambridge.stan",
+             iter = 2000,
+             chains = 4,
+             data = stan_dat2)
+
+
+#summary(fit3, pars = c("nu", "predict"), probs = c(.1, .9))
+
+# create dataframe of predictions
+cambridge_predict <- as.data.frame(summary(fit3, pars = c("predict"), probs = c(.1, .9)))
+
+
+cambridge_predict <- cambridge_predict %>%
+  mutate(Count = c(1:40))
+
+
+# add true injured to file
+cambridge_predict <- cambridge_predict %>%
+  mutate(true_injured = df_cambridge$Total_Injuries[1:40])
+
+
+# plot predictions with confidence interval
+plot(cambridge_predict$Count, cambridge_predict$summary.mean, type = "b", col = "blue", ylim = c(18, 70), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(cambridge_predict$Count, cambridge_predict$summary.10., col = "red")
+lines(cambridge_predict$Count, cambridge_predict$summary.90., col = "red")
+abline(v=31, lty=2, lwd=3)
+legend("topright", legend = c("10 pct", "Mean Prediction", "90 pct"),
+       col = c("red", "blue"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Cambridge")
+
+
+# plot comparison 
+plot(cambridge_predict$Count, cambridge_predict$summary.mean, type = "b", col = "blue", ylim = c(18, 70), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(cambridge_predict$Count, cambridge_predict$true_injured, type = "b", col = "red", lty = 1, lwd = 1)
+abline(v=31, lty=2, lwd=3)
+legend("topright", legend = c("Actual", "Predicted"),
+       col = c("red", "blue"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Cambridge")
+
+
+# calculate the mean absolute percentage error
+mape <- mean(abs((cambridge_predict$summary.mean - cambridge_predict$true_injured) / cambridge_predict$true_injured))
+mape
+
+# means absolute error before 
+mae <- mean(abs(cambridge_predict$summary.mean[1:30] - cambridge_predict$true_injured[1:30]))
+mae
+
+#After 
+mae <- mean(abs(cambridge_predict$summary.mean[31:40] - cambridge_predict$true_injured[31:40]))
+mae
+
+```
+
+# Boston predict
+```{r}
+
+# isolate city data
+df_boston1 <- merged_df %>%
+  filter(CITY == "BOSTON")
+
+# get priors
+brms::get_prior(Total_Injuries ~ 0 + arma(p = 1, q = 1), data = df_boston1)
+
+stan_dat_bos <- list(y = df_boston1$Total_Injuries, 
+                 T = length(df_boston1$Total_Injuries),
+                 n_new = 10)
+
+fit_bos <- stan(file = "C:\\Users\\User\\Desktop\\Bayesian Stats\\Bayesian_Modeling_Project\\Bayesian_Modeling_Project\\single_city_prediction_boston.stan",
+             iter = 2000,
+             chains = 4,
+             data = stan_dat_bos)
+
+
+#summary(fit_bos, pars = c("nu", "predict"), probs = c(.1, .9))
+
+
+# create dataframe of predictions
+boston_predict <- as.data.frame(summary(fit_bos, pars = c("predict"), probs = c(.1, .9)))
+
+
+boston_predict <- boston_predict %>%
+  mutate(Count = c(1:28))
+
+
+# add true injured to file
+boston_predict <- boston_predict %>%
+  mutate(true_injured = df_boston$Total_Injuries[1:28])
+
+
+# plot predictions with confidence interval
+plot(boston_predict$Count, boston_predict$summary.mean, type = "b", col = "blue", ylim = c(0,320), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(boston_predict$Count, boston_predict$summary.10., col = "red")
+lines(boston_predict$Count, boston_predict$summary.90., col = "red")
+abline(v=19, lty=2, lwd=3)
+legend("topright", legend = c("10 pct", "Mean Prediction", "90 pct"),
+       col = c("red", "blue"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Boston")
+
+
+# plot comparison 
+plot(boston_predict$Count, boston_predict$summary.mean, type = "b", col = "blue", ylim = c(0,320), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(boston_predict$Count, boston_predict$true_injured, type = "b", col = "red", lty = 1, lwd = 1)
+abline(v=19, lty=2, lwd=3)
+legend("topright", legend = c("Actual", "Predicted"),
+       col = c("red", "blue"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Boston")
+
+mape <- mean(abs((boston_predict$summary.mean - boston_predict$true_injured) / boston_predict$true_injured))
+mape
+
+
+# means absolute error before 
+mae <- mean(abs(boston_predict$summary.mean[1:18] - boston_predict$true_injured[1:18]))
+mae
+
+#After 
+mae <- mean(abs(boston_predict$summary.mean[19:28] - boston_predict$true_injured[19:28]))
+mae
+```
+
+
+# predict somerville
+```{r}
+
+# isolate city data
+df_somerville1 <- merged_df %>%
+  filter(CITY == "SOMERVILLE")
+
+# get priors
+brms::get_prior(Total_Injuries ~ 0 + arma(p = 1, q = 1), data = df_somerville1)
+
+stan_dat_som <- list(y = df_somerville1$Total_Injuries, 
+                 T = length(df_somerville1$Total_Injuries),
+                 n_new = 10) 
+
+fit_som <- stan(file = "C:\\Users\\User\\Desktop\\Bayesian Stats\\Bayesian_Modeling_Project\\Bayesian_Modeling_Project\\single_city_prediction_somerville.stan",
+             iter = 2000,
+             chains = 4,
+             data = stan_dat_som)
+
+
+#summary(fit_som, pars = c("nu", "predict"), probs = c(.1, .9))
+
+
+# create dataframe of predictions
+somerville_predict <- as.data.frame(summary(fit_som, pars = c("predict"), probs = c(.1, .9)))
+
+
+somerville_predict <- somerville_predict %>%
+  mutate(Count = c(1:41))
+
+
+# add true injured to file
+somerville_predict <- somerville_predict %>%
+  mutate(true_injured = df_somerville$Total_Injuries[1:41])
+
+
+# plot predictions with confidence interval
+plot(somerville_predict$Count, somerville_predict$summary.mean, type = "b", col = "blue", ylim = c(0,50), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(somerville_predict$Count, somerville_predict$summary.10., col = "red")
+lines(somerville_predict$Count, somerville_predict$summary.90., col = "red")
+abline(v=32, lty=2, lwd=3)
+legend("topright", legend = c("10 pct", "Mean Prediction", "90 pct"),
+       col = c("red", "blue"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Somerville")
+
+
+# plot comparison 
+plot(somerville_predict$Count, somerville_predict$summary.mean, type = "b", col = "blue", ylim = c(0,50), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(somerville_predict$Count, somerville_predict$true_injured, type = "b", col = "red", lty = 1, lwd = 1)
+abline(v=32, lty=2, lwd=3)
+legend("topright", legend = c("Actual", "Predicted"),
+       col = c("red", "blue"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Somerville")
+
+mape <- mean(abs((somerville$summary.mean - somerville$true_injured) / somerville$true_injured))
+mape
+
+
+# means absolute error before 
+mae <- mean(abs(somerville_predict$summary.mean[1:31] - somerville_predict$true_injured[1:31]))
+mae
+
+#After 
+mae <- mean(abs(somerville_predict$summary.mean[32:41] - somerville_predict$true_injured[32:41]))
+mae
+
+```
+
+
+# predict brookline
+```{r}
+
+# isolate city data
+df_brookline1 <- merged_df %>%
+  filter(CITY == "BROOKLINE")
+
+# get priors
+brms::get_prior(Total_Injuries ~ 0 + arma(p = 1, q = 1), data = df_brookline1)
+
+stan_dat_brook <- list(y = df_brookline1$Total_Injuries, 
+                 T = length(df_brookline1$Total_Injuries),
+                 n_new = 10) 
+
+fit_brook <- stan(file = "C:\\Users\\User\\Desktop\\Bayesian Stats\\Bayesian_Modeling_Project\\Bayesian_Modeling_Project\\single_city_prediction_brookline.stan",
+             iter = 1000,
+             chains = 4,
+             data = stan_dat_brook)
+
+
+#summary(fit_brook, pars = c("nu", "predict"), probs = c(.1, .9))
+
+
+# create dataframe of predictions
+brookline_predict <- as.data.frame(summary(fit_brook, pars = c("predict"), probs = c(.1, .9)))
+
+
+brookline_predict <- brookline_predict %>%
+  mutate(Count = c(1:41))
+
+
+# add true injured to file
+brookline_predict <- brookline_predict %>%
+  mutate(true_injured = df_brookline$Total_Injuries[1:41])
+
+
+# plot predictions with confidence interval
+plot(brookline_predict$Count, brookline_predict$summary.mean, type = "b", col = "blue", ylim = c(0,30), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(brookline_predict$Count, brookline_predict$summary.10., col = "red")
+lines(brookline_predict$Count, brookline_predict$summary.90., col = "red")
+abline(v=32, lty=2, lwd=3)
+legend("topright", legend = c("10 pct", "Mean Prediction", "90 pct"),
+       col = c("red", "blue"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Brookline")
+
+
+# plot comparison 
+plot(brookline_predict$Count, brookline_predict$summary.mean, type = "b", col = "blue", ylim = c(0,30), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(brookline_predict$Count, brookline_predict$true_injured, type = "b", col = "red", lty = 1, lwd = 1)
+abline(v=32, lty=2, lwd=3)
+legend("topright", legend = c("Actual", "Predicted"),
+       col = c("red", "blue"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Brookline")
+
+
+mape <- mean(abs((brookline_predict$summary.mean - brookline_predict$true_injured) / brookline_predict$true_injured))
+mape
+
+
+# means absolute error before 
+mae <- mean(abs(brookline_predict$summary.mean[1:30] - brookline_predict$true_injured[1:30]))
+mae
+
+#After 
+mae <- mean(abs(brookline_predict$summary.mean[31:40] - brookline_predict$true_injured[31:40]))
+mae
+
+```
+
+
+# plots for just pre-intervention trends
+```{r}
+library(bayesforecast)
+
+# boston
+
+# diagnostics
+ggacf(df_boston1$Total_Injuries) # autocorrelation function
+ggpacf((df_boston1$Total_Injuries)) # partial autocorrelation function
+
+# time series data
+bos_y <- ts(df_boston1$Total_Injuries, start=1, frequency=12)
+
+# seasonal plot
+ggseasonplot(bos_y, polar=TRUE) +
+  ylab("Total Injuries") +
+  ggtitle("Polar seasonal plot: Traffic Injuries")
+
+
+## --------------------------------------------------
+
+# cambridge
+
+# diagnostics 
+ggacf(df_cambridge1$Total_Injuries) # autocorrelation function
+ggpacf((df_cambridge1$Total_Injuries)) # partial autocorrelation function
+
+# time series
+cam_y <- ts(df_cambridge1$Total_Injuries, start=1, frequency=12)
+
+# seasonal
+ggseasonplot(cam_y, polar=TRUE) +
+  ylab("Total Injuries") +
+  ggtitle("Polar seasonal plot: Traffic Injuries")
+
+## --------------------------------------------------
+
+# brookline
+
+ggacf(df_brookline1$Total_Injuries) # autocorrelation function
+ggpacf((df_brookline1$Total_Injuries)) # partial autocorrelation function
+
+# time series
+bro_y <- ts(df_brookline1$Total_Injuries, start=1, frequency=12)
+
+# seasonal
+ggseasonplot(bro_y, polar=TRUE) +
+  ylab("Total Injuries") +
+  ggtitle("Polar seasonal plot: Traffic Injuries")
+
+## --------------------------------------------------
+
+# somerville 
+
+ggacf(df_somerville1$Total_Injuries) # autocorrelation function
+ggpacf((df_somerville1$Total_Injuries)) # partial autocorrelation function
+
+# time series
+som_y <- ts(df_somerville1$Total_Injuries, start=1, frequency=12)
+
+# seasonal
+ggseasonplot(som_y, polar=TRUE) +
+  ylab("Total Injuries") +
+  ggtitle("Polar seasonal plot: Traffic Injuries") 
+
+
+```
+
+
+# Single Plot
+```{r}
+
+
+# boston
+df_boston2 <- df_boston1 %>%
+  mutate(months = seq(1, 18, by = 1)) %>%
+  mutate(bos_injured = Total_Injuries) %>%
+  select(months, bos_injured)
+
+# brookline
+df_brookline2 <- df_brookline1%>%
+  mutate(months = seq(1, 31, by =1)) %>%
+  mutate(brook_injured = Total_Injuries) %>%
+  select(months, brook_injured)
+
+df_somerville2 <- df_somerville1 %>%
+  mutate(months = seq(1, 31, by =1)) %>%
+  mutate(som_injured = Total_Injuries) %>%
+  select(months, som_injured) 
+
+df_cambridge2 <- df_cambridge1 %>%
+  mutate(months = seq(1,30, by = 1)) %>%
+  mutate(cam_injured = Total_Injuries) %>%
+  select(months, cam_injured)
+
+bos_brook_df <- merge(df_boston2, df_brookline2, by = "months", all = TRUE)
+
+bos_brook_cam_df <- merge(bos_brook_df, df_cambridge2, by = "months", all = TRUE)
+
+dated_df <- merge(bos_brook_cam_df, df_somerville2, by = "months", all = TRUE)
+
+
+
+ggplot(dated_df, aes(months)) +
+  geom_line(aes(y = bos_injured), color = "black") + 
+  geom_line(aes(y = brook_injured), color = "red") +
+  geom_line(aes(y = cam_injured), color = "blue") +
+  geom_line(aes(y = som_injured), color = "green") +
+  xlab("Months") + ylab("Injuries") +
+  ggtitle("Traffic Injuries Prior to Treatment") +
+  theme_few() + scale_colour_few()
+  
+
+```
+
+
+
+# Modeling the autoregressive term hierarchically
+```{r}
+
+# create data
+merged_df2 <- merged_df %>%
+  filter(time_since_treatment >= -10)
+
+
+stan_data_H <- list(y = as.array(merged_df2$Total_Injuries), 
+                 T = 10,
+                 N = 40) # 40
+
+
+Hierarchical_fit1 <- stan(file = "C:\\Users\\User\\Desktop\\Bayesian Stats\\Bayesian_Modeling_Project\\Bayesian_Modeling_Project\\Hierarhical_mod_standard.stan",
+             data = stan_data_H,
+             chains = 4,
+             iter = 2000)
+
+summary(Hierarchical_fit1, pars = "y_pred", probs = c(.1, .9))
+
+
+######## Predicting Out
+
+stan_data_h2 <- list(y = as.array(merged_df2$Total_Injuries), 
+                 T = 10,
+                 N = 40,
+                 M = 10)
+
+Hierarchical_fit2 <- stan(file = "C:\\Users\\User\\Desktop\\Bayesian Stats\\Bayesian_Modeling_Project\\Bayesian_Modeling_Project\\Hierarchical_predictions.stan",
+                 data = stan_data_h2,
+                 chains = 4,
+                 iter = 2000)
+
+# only predicting for Somerville
+summary(Hierarchical_fit2, pars = c("y_pred", "y_pred_new_final"), probs = c(.1, .9))
+
+```
+
+
+# Hierachical vs. ARMA(1,1) model (Boston)
+```{r}
+
+df <- as.data.frame(summary(Hierarchical_fit1, pars = "y_pred", probs = c(.1, .9)))
+
+df <- df %>%
+  mutate(Count = c(1:40)) %>%
+  select(summary.mean, summary.90., summary.10., Count)
+  
+df <- df[-c(11:40),]
+
+df <- df %>%
+  mutate(true_injured = df_boston$Total_Injuries[9:18]) %>%
+  mutate(other_mod = boston_predict$summary.mean[9:18]) %>%
+  mutate(other_90 = boston_predict$summary.90.[9:18]) %>%
+  mutate(other_10 = boston_predict$summary.10.[9:18]) 
+
+
+
+# plot predictions with confidence interval
+plot(df$Count, df$summary.mean, type = "b", col = "blue", ylim = c(75,300), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(df$Count, df$summary.10., col = "red")
+lines(df$Count, df$summary.90., col = "red")
+lines(df$Count, df$other_mod, col = "black", type = "b", lwd = 1)
+lines(df$Count, df$other_10, col = 'black')
+lines(df$Count, df$other_90, col = "black")
+lines(df$Count, df$true_injured, col = "green", type = "b", lwd = 1)
+legend("topright", legend = c("Hierarchical: 10 pct", "Hierarchical: Mean Prediction", "Hierarchical: 90 pct", "True Injured", "Original Model"),
+       col = c("red", "blue", "red", "green", "black"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Boston")
+
+
+# without intervals 
+plot(df$Count, df$summary.mean, type = "b", col = "blue", ylim = c(75,300), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(df$Count, df$other_mod, col = "black", type = "b", lwd = 1)
+lines(df$Count, df$true_injured, col = "green", type = "b", lwd = 1)
+legend("topright", legend = c("Original Model", "Hierarchical Prediction", "True Injured"),
+       col = c("black", "blue", "green"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Boston (No CIs)")
+
+```
+
+# Predict Boston and Compare
+```{r}
+
+df <- as.data.frame(summary(Hierarchical_fit2, pars = c("y_pred","y_pred_new_final"), probs = c(.1, .9)))
+
+df <- df %>%
+  mutate(Count = c(1:50)) %>%
+  select(summary.mean, summary.90., summary.10., Count)
+  
+df <- df[-c(11:40),]
+
+df <- df %>%
+  mutate(true_injured = df_boston$Total_Injuries[9:28]) %>%
+  mutate(other_mod = boston_predict$summary.mean[9:28]) %>%
+  mutate(other_90 = boston_predict$summary.90.[9:28]) %>%
+  mutate(other_10 = boston_predict$summary.10.[9:28]) 
+
+df <- df %>%
+  mutate(Count = c(1:20))
+
+# plot predictions with confidence interval
+plot(df$Count, df$summary.mean, type = "b", col = "blue", ylim = c(75,300), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(df$Count, df$summary.10., col = "red")
+lines(df$Count, df$summary.90., col = "red")
+lines(df$Count, df$other_mod, col = "black", type = "b", lwd = 1)
+lines(df$Count, df$other_10, col = 'black')
+lines(df$Count, df$other_90, col = "black")
+lines(df$Count, df$true_injured, col = "green", type = "b", lwd = 1)
+legend("topright", legend = c("Hierarchical: 10 pct", "Hierarchical: Mean Prediction", "Hierarchical: 90 pct", "True Injured", "Original Model"),
+       col = c("red", "blue", "red", "green", "black"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Boston")
+
+
+# without intervals 
+plot(df$Count, df$summary.mean, type = "b", col = "blue", ylim = c(75,300), lty = 1, lwd = 1, 
+      xlab = "Months",
+      ylab = "Traffic Injuries")
+lines(df$Count, df$other_mod, col = "black", type = "b", lwd = 1)
+lines(df$Count, df$true_injured, col = "green", type = "b", lwd = 1)
+legend("topright", legend = c("Original Model", "Hierarchical Prediction", "True Injured"),
+       col = c("black", "blue", "green"), lty = 1:2, cex = 0.8)
+title(main = "Injury Prediction: Boston (No CIs)")
+
+
+# means absolute error before 
+mae <- mean(abs(df$summary.mean[1:10] - df$true_injured[1:10]))
+mae
+
+#After 
+mae <- mean(abs(df$summary.mean[11:20] - df$true_injured[11:20]))
+mae
+
+```
+
+
+# Prior Predictive checks
+
+## Boston
+```{r}
+
+# isolate city data
+df_boston1 <- merged_df %>%
+  filter(CITY == "BOSTON")
+
+# get priors
+brms::get_prior(Total_Injuries ~ 0 + arma(p = 1, q = 1), data = df_boston1)
+
+prior1 <- c(set_prior("normal(0,100)", class = "ar"),
+           set_prior("normal(0,100)", class = "ma"),
+           set_prior("student_t(3, 0, 29.7)", lb = 0, class = "sigma"))
+
+
+boston_arma_prior_predict <- brm(Total_Injuries ~ 0 + arma(p = 1, q = 1), data = df_boston1,
+                                 seed = 1234,
+                                 prior = prior1,
+                                 sample_prior = "only",
+                                 chains = 4,
+                                 iter = 2000,
+                                 cores = getOption("mc.cores", 4))
+
+
+
+# generate data set using posterior_predict function
+ynew_si <- posterior_predict(boston_arma_prior_predict)
+dim(ynew_si)
+
+
+# residuals
+ytildehat_i <- apply(ynew_si, 2, min)
+res <- df_boston1$Total_Injuries - ytildehat_i
+
+plot(res, 
+     xlab = "Index",
+     ylab = "Residual")
+title(main = "Residual Analysis: Simulated Data vs. Actual Data")
+abline(h=0)
+
+```
+
+
+
